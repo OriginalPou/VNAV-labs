@@ -3,6 +3,8 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2/utils.h>
+#include <tf/transform_broadcaster.h>
+#include <tf/transform_listener.h>
 #include <mav_msgs/Actuators.h>
 #include <nav_msgs/Odometry.h>
 #include <trajectory_msgs/MultiDOFJointTrajectoryPoint.h>
@@ -45,6 +47,7 @@
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 class controllerNode{
+  
   ros::NodeHandle nh;
 
   // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -59,6 +62,11 @@ class controllerNode{
   // ~~~~ begin solution
   //
   //     **** FILL IN HERE ***
+  ros::Subscriber desiredState;
+  ros::Subscriber currentState;
+  ros::Publisher propellerSpeed;
+  ros::Timer heartbeat;
+
   //
   // ~~~~ end solution
   // ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~
@@ -89,6 +97,7 @@ class controllerNode{
   Eigen::Vector3d xd;    // desired position of the UAV's c.o.m. in the world frame
   Eigen::Vector3d vd;    // desired velocity of the UAV's c.o.m. in the world frame
   Eigen::Vector3d ad;    // desired acceleration of the UAV's c.o.m. in the world frame
+  Eigen::Vector3d omegad;// desired angular velocity of the UAV's c.o.m. in the world frame
   double yawd;           // desired yaw angle
 
   double hz;             // frequency of the main control loop
@@ -125,6 +134,13 @@ public:
       // ~~~~ begin solution
       //
       //     **** FILL IN HERE ***
+      std::cout <<"I'm here";
+
+      desiredState= nh.subscribe("desired_state", 1000, &controllerNode::onDesiredState, this);
+      currentState= nh.subscribe("current_state", 1000, &controllerNode::onCurrentState, this);
+      heartbeat= nh.createTimer(ros::Duration(1/hz), &controllerNode::controlLoop, this);
+      propellerSpeed = nh.advertise<mav_msgs::Actuators>("rotor_speed_cmds",1000);
+      heartbeat.start();
       //
       // ~~~~ end solution
 
@@ -180,7 +196,16 @@ public:
       // ~~~~ begin solution
       //
       //     **** FILL IN HERE ***
-      //
+      //std::cout <<"I'm here";
+      geometry_msgs::Vector3 xd = des_state.transforms[0].translation;
+      geometry_msgs::Vector3 vd = des_state.velocities[0].linear;
+      geometry_msgs::Vector3 omegad = des_state.velocities[0].angular;
+      geometry_msgs::Vector3 ad = des_state.accelerations[0].linear;
+      this->omegad << omegad.x, omegad.y, omegad.z;
+      this->xd << xd.x, xd.y, xd.z;
+      this->vd << vd.x, vd.y, vd.z;
+      this->ad << ad.x, ad.y, ad.z;
+      //ROS_INFO("xd values:\nx: %f \ny: %f \nz: %f \n", xd.x, xd.y, xd.z);
       // ~~~~ end solution
       //
       // 3.2 Extract the yaw component from the quaternion in the incoming ROS
@@ -191,9 +216,12 @@ public:
       //    - maybe you want to use also tf2::fromMsg(...)
       //
       // ~~~~ begin solution
-      //
-      //     **** FILL IN HERE ***
-      //
+      
+      geometry_msgs::Quaternion YPR = des_state.transforms[0].rotation;
+      tf2::Quaternion q;
+      tf2::fromMsg(YPR, q);
+      this->yawd = tf2::getYaw(q);
+
       // ~~~~ end solution
       //
       // ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~
@@ -213,9 +241,22 @@ public:
       //          needs to be in the body frame!
       //
       // ~~~~ begin solution
-      //
-      //     **** FILL IN HERE ***
-      //
+      
+      geometry_msgs::Point x = cur_state.pose.pose.position;
+      geometry_msgs::Vector3 v = cur_state.twist.twist.linear;
+      geometry_msgs::Quaternion R = cur_state.pose.pose.orientation;
+      geometry_msgs::Vector3 w = cur_state.twist.twist.angular;
+      this-> x << x.x, x.y, x.z;
+      this-> v << v.x, v.y, v.z;
+      
+      // transforming the geometry_msgs::Quaternion to Eigen::Matrix3d
+      Eigen::Quaterniond q;
+      Eigen::fromMsg(R,q);
+      this->R = q.toRotationMatrix();
+      this-> omega << w.x, w.y, w.z;
+      Eigen::Matrix3d Rw_b = this->R.transpose();
+      this->omega = Rw_b*this->omega;
+      
       // ~~~~ end solution
       //
       // ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~
@@ -234,9 +275,11 @@ public:
     //  Hint: [1], eq. (6), (7)
     //
     // ~~~~ begin solution
-    //
-    //     **** FILL IN HERE ***
-    //
+    
+    ex = this->x - this->xd;
+    ev = this->v - this->vd;
+    std::cout << "ex = \n "<< ex << "\n";
+    std::cout << "ev = \n "<< ev << "\n";
     // ~~~~ end solution
 
     // 5.2 Compute the Rd matrix.
@@ -255,9 +298,18 @@ public:
     //    - remember to normalize your axes!
     //
     // ~~~~ begin solution
-    //
-    //     **** FILL IN HERE ***
-    //
+    
+    Eigen::Vector3d b3d = (-kx*ex -kv*ev+ m*g*e3+ m*ad).normalized();
+    Eigen::Vector3d b1d_;
+    std::cout << "yawd \n" << yawd <<'\n';
+    b1d_ << std::cos(yawd), std::sin(yawd), 0;
+    Eigen::Vector3d b1d = ((b3d.cross(b1d_)).cross(b3d)).normalized();
+    Eigen::Vector3d b2d = b3d.cross(b1d);
+    //Eigen::Vector3d b1d = b2d.cross(b3d);
+    Eigen::Matrix3d Rd;
+    Rd << b1d, b2d, b3d;
+    //std::cout << "checking\n " << Rd <<'\n' << b1d <<'\n' << b2d <<'\n' << b3d <<'\n'; 
+    
     // ~~~~ end solution
     //
     // 5.3 Compute the orientation error (er) and the rotation-rate error (eomega)
@@ -270,9 +322,28 @@ public:
     //          effects on the closed-loop dynamics.
     //
     // ~~~~ begin solution
-    //
-    //     **** FILL IN HERE ***
-    //
+    Eigen::Matrix3d Rdt =Rd.transpose();
+    Eigen::Matrix3d Rt =R.transpose(); 
+    Eigen::Vector3d err= Vee(Rdt*R- Rt*Rd);
+    er << err(0), err(1), err(2);
+    er= -er;
+    eomega= omega - Rt*Rd*omegad; // the omega error cannot be all of omega. This needs to change. 
+    std::cout << "er \n" << er << "\n" ;
+    
+    double roll = std::atan2(Rd(2,0), Rd(2,1));
+    double pitch = std::acos(Rd(2,2));
+    double yaw = -std::atan2(Rd(0,2), Rd(1,2));
+
+    std::cout << "Roll, Pitch, Yaw \n" << roll << ' '<< pitch << ' '<< yaw << "\n" ;
+    roll = std::atan2(R(2,0), R(2,1));
+    pitch = std::acos(R(2,2));
+    yaw = -std::atan2(R(0,2), R(1,2));
+    std::cout << "Roll, Pitch, Yaw \n" << roll << ' '<< pitch << ' '<< yaw << "\n" ;
+
+    std::cout << "I \n" << Rd.transpose()*Rd << "\n" ;
+    std::cout << "er \n" << Rd.transpose()*R- R.transpose()*Rd << "\n" ;
+    std::cout << "Rd \n" << Rd << "\n" ;
+    std::cout << "R \n" << R << "\n" ;
     // ~~~~ end solution
     //
     // 5.4 Compute the desired wrench (force + torques) to control the UAV.
@@ -291,9 +362,10 @@ public:
     //      effects on the closed-loop dynamics.
     //
     // ~~~~ begin solution
-    //
-    //     **** FILL IN HERE ***
-    //
+    double f = (-kx*ex - kv*ev + m*g*e3 + m*ad).dot(R*e3);
+    Eigen::Vector3d M = kr*er -komega*eomega + omega.cross(J*omega);
+    //Eigen::Vector3d M;
+    //M << 0, 0, 0;
     // ~~~~ end solution
 
     // 5.5 Recover the rotor speeds from the wrench computed above
@@ -320,9 +392,33 @@ public:
     //       direction!
     //
     // ~~~~ begin solution
-    //
-    //     **** FILL IN HERE ***
-    //
+    F2W=  Eigen::Matrix4d :: Zero () ;
+    double c = sqrt(pow(d,2)/2);
+
+    F2W << cf, cf, cf, cf,
+          cf*c, cf*c, -cf*c, -cf*c,
+          -cf*c, cf*c, cf*c, -cf*c,
+          cd, -cd, cd, -cd;
+    /*
+    double ct= cd/cf;
+    F2W << 1, 1, 1, 1,
+        0, -d, 0, d,
+        d, 0, -d, 0,
+        -ct, ct, -ct, ct;*/
+    Eigen::Vector4d F;
+    F << f, M;
+    std::cout << "F \n";
+    
+    std::cout << F << '\n';
+
+    Eigen::Vector4d thrust = F2W.inverse()*F;
+    std::vector<double> motorVelocity;
+    //double motorVelocity[4];
+    for (auto i=0; i<4; i++){
+        thrust(i)=signed_sqrt(thrust(i));
+        motorVelocity.push_back(thrust(i));
+    }
+    std::cout << "thrust \n" << thrust <<'\n';
     // ~~~~ end solution
     //
     // 5.6 Populate and publish the control message
@@ -331,9 +427,9 @@ public:
     // to use signed_sqrt function).
     //
     // ~~~~ begin solution
-    //
-    //     **** FILL IN HERE ***
-    //
+    mav_msgs::Actuators actuators;
+    actuators.angular_velocities= motorVelocity;
+    propellerSpeed.publish(actuators);
     // ~~~~ end solution
     //
     // ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~

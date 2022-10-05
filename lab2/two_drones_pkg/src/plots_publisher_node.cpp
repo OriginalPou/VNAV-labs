@@ -52,6 +52,8 @@ class PlotsPublisherNode{
           *       due to timing issues. To fix it, consider the method "waitForTransform" with 
           *       a small wait time.    
           */
+         parent->tf_listener.waitForTransform(ref_frame, dest_frame, ros::Time(0), ros::Duration(10.0) );
+         parent->tf_listener.lookupTransform(ref_frame, dest_frame, ros::Time(0), transform);
 
          // ~~~~~~~~~~~~~~~~~~~~~~~~  END OF EDIT SECTION  ~~~~~~~~~~~~~~~~~~~~~~~~~
          while(poses.size() >= buffer_size)
