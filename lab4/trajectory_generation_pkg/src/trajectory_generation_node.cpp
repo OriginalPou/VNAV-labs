@@ -30,6 +30,7 @@ class WaypointFollower {
 
   // Current state
   Eigen::Vector3d x;  // current position of the UAV's c.o.m. in the world frame
+  double yaw0 = 0; // initial yaw orientation of the UAV's c.o.m. in the world frame
 
   ros::Timer desiredStateTimer;
 
@@ -49,6 +50,12 @@ class WaypointFollower {
     
     geometry_msgs::Point posX = cur_state.pose.pose.position;
     x << posX.x, posX.y, posX.z;
+    geometry_msgs::Quaternion R = cur_state.pose.pose.orientation;
+    Eigen::Quaterniond q;
+    Eigen::fromMsg(R,q);
+    //initial yaw
+    yaw0 = tf2::getYaw(q);
+    
 
     // ~~~~ end solution
     // ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~
@@ -115,13 +122,13 @@ class WaypointFollower {
     yaw_vertices.push_back(start_yaw);
 
     double last_yaw = 0;
-    for (auto i = 0; i < poseArray.poses.size(); ++i) {
+    for (auto i = 0; i < poseArray.poses.size(); i++) {
       // Populate vertices (for the waypoint positions)
-      
       geometry_msgs::Point vertexPos = poseArray.poses[i].position;
       Eigen::Vector3d pos;
       pos << vertexPos.x, vertexPos.y, vertexPos.z;
       
+      ROS_INFO_STREAM("Vertex position n "<< i << "= \n" << pos);
 
       // Populate yaw_vertices (for the waypoint yaw angles)
       
@@ -146,7 +153,7 @@ class WaypointFollower {
       }else{
         end_position.makeStartOrEnd(pos, SNAP);
         vertices.push_back(end_position);
-        end_yaw.addConstraint(ORIENTATION,yaw);
+        end_yaw.addConstraint(ORIENTATION,last_yaw);
         yaw_vertices.push_back(end_yaw);
       }
 
@@ -165,15 +172,15 @@ class WaypointFollower {
     // HINT: play with these segment times and see if you can finish
     // the race course faster!
     std::vector<double> segment_times;
-    const double v_max = 69.0;
-    const double a_max = 34.0;
+    const double v_max = 120.0;
+    const double a_max = 50.0;
     segment_times = estimateSegmentTimes(vertices, v_max, a_max);
 
     // =====================================================
     // Solve for the optimized trajectory (linear optimizer)
     // =====================================================
     // Position
-    const int N = 10;
+    const int N = 12;
     mav_trajectory_generation::PolynomialOptimization<N> opt(D);
     opt.setupFromVertices(vertices, segment_times, SNAP);
     opt.solveLinear();
@@ -227,7 +234,7 @@ class WaypointFollower {
         yaw_trajectory.evaluate(sampling_time, ORIENTATION);
     ROS_INFO("Traversed %f percent of the trajectory.",
              sampling_time / trajectory.getMaxTime() * 100);
-
+    ROS_INFO_STREAM ("yaw at time 0 = " << yaw0);
     ROS_INFO_STREAM("des_orientation" << des_orientation);
     double des_Yaw = des_orientation[0];
     //des_Yaw = std::fmod(des_Yaw+ 2*PI, 2*PI);
@@ -235,7 +242,7 @@ class WaypointFollower {
       des_Yaw = des_orientation[0]>=0? std::fmod(des_orientation[0], PI) : -std::fmod(abs(des_orientation[0]), PI);
     }*/
     
-    ROS_INFO_STREAM("des_yaw" << des_Yaw);   
+    ROS_INFO_STREAM("des_pos\n" << des_position);   
     // Populate next_point
     geometry_msgs::Vector3 posX;
     posX.x = des_position(0);

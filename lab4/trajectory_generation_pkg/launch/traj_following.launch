@@ -1,14 +1,25 @@
 <launch>
+  <!-- Launch file includes-->>
+  <include file="$(find planner_pkg)/launch/traj_gen.launch"/>
+  <include file="$(find tesse_ros_bridge)/launch/tesse_quadrotor_bridge.launch"/>
+
+ 
+
+  <!-- TODO: Copy your controller gains from lab 3 to here! -->
+  <!-- Controller gains -->
+  <param name="kx" type="double" value="6" />
+  <param name="kv" type="double" value="4" />
+  <param name="kr" type="double" value="4" />
+  <param name="komega" type="double" value="1.5" />
+
   <!-- Launch trajectory generation node -->
   <node name="trajectory_generation_node" pkg="trajectory_generation" type="trajectory_generation_node" output="screen" />
 
   <!-- Launch our controller -->
-  <node name="controller_node" pkg="controller_pkg" type="controller_node" />
+  <node name="controller_node" pkg="controller_pkg" type="controller_node" output="screen" />
 
-  <!-- TODO: Copy your controller gains from lab 3 to here! -->
-  <!-- Controller gains -->
-  <param name="kx" type="double" value="10" />
-  <param name="kv" type="double" value="5" />
-  <param name="kr" type="double" value="5" />
-  <param name="komega" type="double" value="2" />
+  
+
+  
+  
 </launch>

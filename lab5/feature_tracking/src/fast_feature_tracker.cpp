@@ -38,9 +38,9 @@ FastFeatureTracker::FastFeatureTracker()
 void FastFeatureTracker::detectKeypoints(const cv::Mat &img,
                                          std::vector<cv::KeyPoint> *keypoints) const {
 // ~~~~ begin solution
-//
-//     **** FILL IN HERE ***
-//
+
+this->detector->detect(img, *keypoints);
+
 // ~~~~ end solution
 }
 
@@ -48,9 +48,10 @@ void FastFeatureTracker::describeKeypoints(const cv::Mat &img,
                                            std::vector<cv::KeyPoint> *keypoints,
                                            cv::Mat *descriptors) const {
 // ~~~~ begin solution
-//
-//     **** FILL IN HERE ***
-//
+
+//BriefDescriptorExtractor descriptor = BriefDescriptorExtractor::create();		
+cv::Ptr<cv::xfeatures2d::BriefDescriptorExtractor> descriptor = cv::xfeatures2d::BriefDescriptorExtractor::create();
+descriptor-> compute(img, *keypoints, *descriptors);
 // ~~~~ end solution
 }
 
@@ -59,8 +60,16 @@ void FastFeatureTracker::matchDescriptors(const cv::Mat &descriptors_1,
                                           std::vector<std::vector<cv::DMatch>> *matches,
                                           std::vector<cv::DMatch> *good_matches) const {
 // ~~~~ begin solution
-//
-//     **** FILL IN HERE ***
-//
+
+FlannBasedMatcher matcher(new flann::LshIndexParams(20, 10, 2));
+matcher.knnMatch(descriptors_1,descriptors_2, *matches, 2);
+
+const float ratio_thresh = 0.8f;
+
+for (auto& match : *matches){
+  if(match.size()==1 || match[0].distance< ratio_thresh * match[1].distance)
+    good_matches->push_back(match[0]);
+}
+
 // ~~~~ end solution
 }

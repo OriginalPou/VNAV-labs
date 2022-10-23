@@ -57,11 +57,20 @@ void imageCallback(const sensor_msgs::ImageConstPtr &msg,
 void lkImageCallback(const sensor_msgs::ImageConstPtr &msg,
                      std::shared_ptr<LKFeatureTracker> lk_tracker) {
   // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  // ~~~~ begin solution
-  //
-  //     **** FILL IN HERE ***
-  //
-  // ~~~~ end solution
+  try {
+    // Convert ROS msg type to OpenCV image type.
+    cv::Mat image = cv_bridge::toCvShare(msg, "bgr8")->image;
+
+    // Visualize the image.
+    cv::imshow("view", image);
+    cv::waitKey(1);
+    //static cv::Mat prev_image = image;
+    lk_tracker->trackFeatures(image);
+    cv::waitKey(1);
+    //prev_image = image;
+  } catch (cv_bridge::Exception &e) {
+    ROS_ERROR("Could not convert from '%s' to 'bgr8'.", msg->encoding.c_str());
+  }
   // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 }
 
@@ -177,8 +186,12 @@ int main(int argc,
     ROS_ERROR("Unrecognized mode argument");
     return EXIT_FAILURE;
   }
-
-  feature_tracker->printStats();
+  if (descriptor == "LK") {
+        lk_tracker->printStats();
+      } else {
+        feature_tracker->printStats();
+      }
+  
 
   return EXIT_SUCCESS;
 }

@@ -62,9 +62,10 @@ void FeatureTracker::trackFeatures(const cv::Mat &img_1,
   //   SiftFeatureTracker)
   //
   // ~~~~ begin solution
-  //
-  //     **** FILL IN HERE ***
-  //
+  
+  this->detectKeypoints(img_1, &keypoints_1);
+  this->detectKeypoints(img_2, &keypoints_2);
+
   // ~~~~ end solution
   //
   //   2. Display detected keypoints on both images, and save them for the
@@ -74,9 +75,20 @@ void FeatureTracker::trackFeatures(const cv::Mat &img_1,
   //   file we offer an alternative).
   //
   // ~~~~ begin solution
-  //
-  //     **** FILL IN HERE ***
-  //
+  
+  cv::Mat img_1Keypoints;
+  cv::Mat img_2Keypoints;
+
+  cv::drawKeypoints(img_1, keypoints_1, img_1Keypoints);
+  cv::drawKeypoints(img_2, keypoints_2, img_2Keypoints);
+  
+  imshow("img_1", img_1Keypoints);
+  //while (ros::ok() && waitKey(10) == -1) {}
+  waitKey(10);
+  imshow("img_2", img_2Keypoints);
+  //while (ros::ok() && waitKey(10) == -1) {}
+  waitKey(10);
+
   // ~~~~ end solution
   //
   //   3. Compute descriptors by filling in the skeleton function
@@ -84,9 +96,14 @@ void FeatureTracker::trackFeatures(const cv::Mat &img_1,
   //   SiftFeatureTracker)
   //
   // ~~~~ begin solution
-  //
-  //     **** FILL IN HERE ***
-  //
+  
+  cv::Mat img_1Descriptors;
+  cv::Mat img_2Descriptors;
+
+  this->describeKeypoints(img_1, &keypoints_1, &img_1Descriptors);
+  this->describeKeypoints(img_2, &keypoints_2, &img_2Descriptors);
+
+
   // ~~~~ end solution
   //
   // ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~
@@ -107,18 +124,22 @@ void FeatureTracker::trackFeatures(const cv::Mat &img_1,
   //   SiftFeatureTracker), and call them here.
   //
   // ~~~~ begin solution
-  //
-  //     **** FILL IN HERE ***
-  //
+  
+  this->matchDescriptors(img_1Descriptors, img_2Descriptors, &matches, &good_matches);
+
   // ~~~~ end solution
   //
   //   2. Plot the matches using the opencv function 'drawMatches'. Save the
   //   image for deliverable.
   //
   // ~~~~ begin solution
-  //
-  //     **** FILL IN HERE ***
-  //
+  cv::Mat img_matches;
+  //this->drawMatches(img_1, img_2, keypoints_1, keypoints_2, good_matches);
+  cv::drawMatches( img_1, keypoints_1, img_2, keypoints_2, good_matches, img_matches);
+  //              Scalar::all(-1), std::vector<char>(), DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS );
+  imshow("Good Matches", img_matches );
+  //while (ros::ok() && waitKey(10) == -1) {}
+  waitKey(10);
   // ~~~~ end solution
   //
   //   3. Use the function 'inlierMaskComputation' to get the inliers amongst
@@ -129,9 +150,15 @@ void FeatureTracker::trackFeatures(const cv::Mat &img_1,
   //   'inlierMaskComputation' function.
   //
   // ~~~~ begin solution
-  //
-  //     **** FILL IN HERE ***
-  //
+  std::vector<KeyPoint> keypoints_1D, keypoints_2D; 
+  for(auto& match : good_matches){
+    keypoints_1D.push_back(keypoints_1[match.queryIdx]);
+    keypoints_2D.push_back(keypoints_2[match.trainIdx]);
+  }
+
+  std::vector<uchar> inlier_mask;
+  inlierMaskComputation(keypoints_1D, keypoints_2D, &inlier_mask);  
+
   // ~~~~ end solution
   //
   // ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~
@@ -142,7 +169,10 @@ void FeatureTracker::trackFeatures(const cv::Mat &img_1,
   //  DELIVERABLE 5 | Keypoint Matching Quality
   // ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~  ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~
   //
-  unsigned int num_inliers; // TODO compute number of inliers
+  unsigned int num_inliers = 0; // TODO compute number of inliers
+  for (auto& inlier : inlier_mask)
+    if (inlier == 1)
+      num_inliers ++;
   // 
   // For this part, you will need to:
   //   1. Draw the inlier (green) and outlier (red) matches in a similar way
@@ -151,9 +181,21 @@ void FeatureTracker::trackFeatures(const cv::Mat &img_1,
   //   inliers. See the handout for more details
   //
   // ~~~~ begin solution
-  //
-  //     **** FILL IN HERE ***
-  //
+  
+  cv::Mat img_outlier_inliers;
+
+  cv::drawMatches( img_1, keypoints_1, img_2, keypoints_2, good_matches, img_outlier_inliers,
+                cv::Scalar(0,0,255), cv::Scalar(0,0,255), std::vector<char>(), DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS );
+  
+  std::vector<char> char_inlier_mask{inlier_mask.begin(), inlier_mask.end()};
+
+  cv::drawMatches( img_1, keypoints_1, img_2, keypoints_2, good_matches, img_outlier_inliers,
+                cv::Scalar(0,255,0), cv::Scalar(0,255,0), char_inlier_mask, DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS | DrawMatchesFlags::DRAW_OVER_OUTIMG);
+
+  imshow("Inlier outliers", img_outlier_inliers );
+  //while (ros::ok() && waitKey(10) == -1) {}
+  waitKey(10);
+
   // ~~~~ end solution
   //
   //   2. Calculate the statistics to fill the table in the handout.
@@ -230,16 +272,17 @@ void FeatureTracker::drawMatches(const cv::Mat &img_1,
                   std::vector<std::vector<char>>(),
                   DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
   // Show detected matches
+  cv::namedWindow("tracked_features");
   imshow("tracked_features", img_matches);
 
   // Wait indefinitely for key pressed, but allow ROS to also kill everything.
   // Otherwise ROS will not die unless we close the window.
   // Use this when wanting to visualize pairs of images, one at a time.
-  while (ros::ok() && waitKey(10) == -1) {} // Instead of using waitKey(0);
+  //while (ros::ok() && waitKey(10) == -1) {} // Instead of using waitKey(0);
 
   // Alternatively, just wait for some seconds. Use this when playing with video
   // sequences.
-  // waitKey(10);
+  waitKey(10);
 }
 
 void FeatureTracker::printStats() const {
